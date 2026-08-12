@@ -1,0 +1,1 @@
+ALTER TABLE `purchase_suggestion_lines` ADD `suggested_quantity` real DEFAULT 0 NOT NULL;
