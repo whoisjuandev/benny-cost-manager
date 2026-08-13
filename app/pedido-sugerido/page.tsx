@@ -1,10 +1,10 @@
 import { PurchaseSuggestionsPageClient } from "@/components/screens/purchase-suggestions-page-client";
-import { getLatestPurchaseSuggestionSnapshot, getPurchaseSuggestions } from "@/lib/data/catalog";
+import { getCurrencySymbol, getLatestPurchaseSuggestionSnapshot, getPurchaseSuggestions } from "@/lib/data/catalog";
 
 export default function PurchaseSuggestionsPage() {
   const suggestions = getPurchaseSuggestions();
   const latestSnapshot = getLatestPurchaseSuggestionSnapshot();
+  const currencySymbol = getCurrencySymbol();
 
-  return <PurchaseSuggestionsPageClient suggestions={suggestions} latestSnapshot={latestSnapshot} />;
+  return <PurchaseSuggestionsPageClient suggestions={suggestions} latestSnapshot={latestSnapshot} currencySymbol={currencySymbol} />;
 }
-

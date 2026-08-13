@@ -1,6 +1,8 @@
 import { relations } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { money } from "./money";
+
 const timestamps = {
   createdAt: text("created_at").notNull().default("CURRENT_TIMESTAMP"),
   updatedAt: text("updated_at").notNull().default("CURRENT_TIMESTAMP"),
@@ -38,7 +40,7 @@ export const ingredients = sqliteTable("ingredients", {
   purchaseQuantity: real("purchase_quantity").notNull(),
   purchaseUnit: text("purchase_unit").notNull(),
   usageUnit: text("usage_unit").notNull(),
-  purchasePrice: real("purchase_price").notNull(),
+  purchasePrice: money("purchase_price").notNull(),
   wastePct: real("waste_pct").notNull().default(0),
   correctionFactor: real("correction_factor").notNull().default(1),
   minDailyConsumption: real("min_daily_consumption").notNull().default(0),
@@ -75,7 +77,7 @@ export const recipes = sqliteTable("recipes", {
   servings: integer("servings").notNull().default(1),
   productionWastePct: real("production_waste_pct").notNull().default(0),
   targetMarginPct: real("target_margin_pct").notNull().default(0.6),
-  currentSalePrice: real("current_sale_price"),
+  currentSalePrice: money("current_sale_price"),
   taxPct: real("tax_pct").notNull().default(0.21),
   lastCostingAt: text("last_costing_at"),
   ...timestamps,
@@ -125,7 +127,7 @@ export const purchaseSuggestionLines = sqliteTable("purchase_suggestion_lines", 
   reorderPoint: real("reorder_point").notNull().default(0),
   suggestedQuantity: real("suggested_quantity").notNull().default(0),
   suggestedPackages: integer("suggested_packages").notNull().default(0),
-  estimatedCost: real("estimated_cost").notNull().default(0),
+  estimatedCost: money("estimated_cost").notNull().default(0),
   reason: text("reason"),
 });
 
@@ -141,11 +143,11 @@ export const monthlyLedgerLines = sqliteTable("monthly_ledger_lines", {
   monthlyLedgerId: text("monthly_ledger_id").notNull().references(() => monthlyLedgers.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   concept: text("concept").notNull(),
-  week1Amount: real("week_1_amount").notNull().default(0),
-  week2Amount: real("week_2_amount").notNull().default(0),
-  week3Amount: real("week_3_amount").notNull().default(0),
-  week4Amount: real("week_4_amount").notNull().default(0),
-  totalAmount: real("total_amount").notNull().default(0),
+  week1Amount: money("week_1_amount").notNull().default(0),
+  week2Amount: money("week_2_amount").notNull().default(0),
+  week3Amount: money("week_3_amount").notNull().default(0),
+  week4Amount: money("week_4_amount").notNull().default(0),
+  totalAmount: money("total_amount").notNull().default(0),
 });
 
 export const suppliersRelations = relations(suppliers, ({ many }) => ({

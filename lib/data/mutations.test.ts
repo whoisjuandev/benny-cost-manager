@@ -110,6 +110,43 @@ describe("data mutations", () => {
     expect(ingredient?.purchasePrice).toBe(5000);
   });
 
+  it("loads seeded SKUs and converts visible recipe line subtotals", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema, catalog } = await loadModules(url);
+    expect(db.select().from(schema.ingredients).get()?.sku).toBeTruthy();
+    const supplier = db.select().from(schema.suppliers).get()!;
+    const ingredientResult = mutations.saveIngredientFromFormData(createFormData({
+      name: "Ingrediente por kilo",
+      sku: "KG-001",
+      category: "Pruebas",
+      supplierId: supplier.id,
+      purchaseQuantity: "1",
+      purchaseUnit: "kg",
+      usageUnit: "g",
+      purchasePrice: "1000",
+      wastePct: "0",
+      correctionFactor: "1",
+      minDailyConsumption: "0",
+      maxDailyConsumption: "1",
+      currentStock: "0",
+    }));
+    const recipe = db.select().from(schema.recipes).get()!;
+
+    const lineResult = mutations.saveRecipeLineFromFormData(createFormData({
+      recipeId: recipe.id,
+      refType: "ingredient",
+      refId: ingredientResult.data!.id,
+      quantity: "1",
+      unit: "kg",
+    }));
+    expect(lineResult.ok).toBe(true);
+
+    const visibleLine = catalog.getRecipes().find((item) => item.id === recipe.id)?.lines.find((line) => line.id === lineResult.data!.lineId);
+    expect(visibleLine?.subtotal).toBeCloseTo(1000, 5);
+  });
+
   it("removes an unused ingredient and blocks removal when it has inventory history", async () => {
     const { directory, url } = createTempDatabaseUrl();
     tempDirectories.push(directory);
@@ -354,6 +391,7 @@ describe("data mutations", () => {
 
     const updatedIngredient = db.select().from(schema.ingredients).get();
     expect(updatedIngredient?.currentStock).toBe(42);
+    expect(updatedIngredient?.usageUnit).toBe(ingredient?.usageUnit);
 
     const count = db.select().from(schema.inventoryCounts).all().find((item) => item.id === result.data!.inventoryCountId);
     const line = db.select().from(schema.inventoryCountLines).all().find((item) => item.inventoryCountId === result.data!.inventoryCountId);
@@ -361,6 +399,86 @@ describe("data mutations", () => {
     expect(count?.countedBy).toBe("Benny");
     expect(line?.currentQuantity).toBe(42);
     expect(line?.location).toBe("Depósito");
+  });
+
+  it("records a compatible count unit without changing the canonical usage unit", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema } = await loadModules(url);
+    const supplier = db.select().from(schema.suppliers).get()!;
+    const ingredientResult = mutations.saveIngredientFromFormData(createFormData({
+      name: "Harina para conteo",
+      sku: "HAR-TEST",
+      category: "Pruebas",
+      supplierId: supplier.id,
+      purchaseQuantity: "1",
+      purchaseUnit: "kg",
+      usageUnit: "g",
+      purchasePrice: "1000",
+      wastePct: "0",
+      correctionFactor: "1",
+      minDailyConsumption: "0",
+      maxDailyConsumption: "1",
+      currentStock: "0",
+    }));
+    const ingredient = db.select().from(schema.ingredients).where(eq(schema.ingredients.id, ingredientResult.data!.id)).get();
+
+    const result = mutations.saveInventoryCountFromFormData(createFormData({
+      ingredientId: ingredient!.id,
+      quantity: "2",
+      unit: "kg",
+      location: "Depósito",
+      countedBy: "QA",
+      notes: "Conteo en unidad de compra",
+    }));
+
+    expect(result.ok).toBe(true);
+    const updated = db.select().from(schema.ingredients).where(eq(schema.ingredients.id, ingredient!.id)).get();
+    const line = db.select().from(schema.inventoryCountLines).all().find((item) => item.inventoryCountId === result.data!.inventoryCountId);
+    expect(updated?.usageUnit).toBe("g");
+    expect(updated?.currentStock).toBe(2000);
+    expect(line?.unit).toBe("kg");
+  });
+
+  it("rejects incompatible recipe and sub-recipe units", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema } = await loadModules(url);
+    const recipe = db.select().from(schema.recipes).get()!;
+    const ingredient = db.select().from(schema.ingredients).all().find((item) => item.usageUnit === "u")!;
+    const subRecipe = db.select().from(schema.subRecipes).get()!;
+
+    const recipeLine = mutations.saveRecipeLineFromFormData(createFormData({
+      recipeId: recipe.id, refType: "ingredient", refId: ingredient.id, quantity: "1", unit: "kg",
+    }));
+    expect(recipeLine.ok).toBe(false);
+    expect(recipeLine.message).toContain("compatible");
+
+    const subLine = mutations.saveSubRecipeLineFromFormData(createFormData({
+      subRecipeId: subRecipe.id, refType: "ingredient", refId: ingredient.id, quantity: "1", unit: "kg",
+    }));
+    expect(subLine.ok).toBe(false);
+    expect(subLine.fieldErrors?.unit).toContain("compatible");
+  });
+
+  it("rejects an indirect sub-recipe cycle during mutation", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema } = await loadModules(url);
+    const [a, b, c] = ["A", "B", "C"].map((name) => mutations.saveSubRecipeFromFormData(createFormData({
+      name: `Ciclo ${name}`, outputQuantity: "1", outputUnit: "u", wastePct: "0", correctionFactor: "1",
+    })).data!.id);
+
+    expect(mutations.saveSubRecipeLineFromFormData(createFormData({ subRecipeId: a!, refType: "subrecipe", refId: b!, quantity: "1", unit: "u" })).ok).toBe(true);
+    expect(mutations.saveSubRecipeLineFromFormData(createFormData({ subRecipeId: b!, refType: "subrecipe", refId: c!, quantity: "1", unit: "u" })).ok).toBe(true);
+    const cycle = mutations.saveSubRecipeLineFromFormData(createFormData({ subRecipeId: c!, refType: "subrecipe", refId: a!, quantity: "1", unit: "u" }));
+
+    expect(cycle.ok).toBe(false);
+    expect(cycle.message).toContain("ciclo");
+    expect(db.select().from(schema.subRecipeLines).all().filter((line) => line.subRecipeId === c)).toHaveLength(0);
   });
 
   it("updates monthly ledger totals from weekly amounts", async () => {
@@ -478,6 +596,22 @@ describe("data mutations", () => {
     expect(confirmed?.status).toBe("confirmed");
   });
 
+  it("preserves supplier notes when updating operational fields", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema } = await loadModules(url);
+    const supplier = db.select().from(schema.suppliers).get()!;
+    db.update(schema.suppliers).set({ notes: "Nota original" }).where(eq(schema.suppliers.id, supplier.id)).run();
+
+    const result = mutations.saveSupplierFromFormData(createFormData({
+      id: supplier.id, name: supplier.name, contact: "Nuevo contacto", phone: "", leadTimeDays: "3", active: "true", notes: "Nota original",
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(db.select().from(schema.suppliers).where(eq(schema.suppliers.id, supplier.id)).get()?.notes).toBe("Nota original");
+  });
+
   it("creates and updates a supplier with persisted operational fields", async () => {
     const { directory, url } = createTempDatabaseUrl();
     tempDirectories.push(directory);
@@ -530,6 +664,28 @@ describe("data mutations", () => {
     expect(removed.ok).toBe(true);
   });
 
+  it("blocks deleting suppliers referenced by purchase snapshots", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, db, schema } = await loadModules(url);
+    const ingredient = db.select().from(schema.ingredients).get()!;
+    const unusedSupplier = mutations.saveSupplierFromFormData(createFormData({
+      name: "Proveedor snapshot", contact: "", phone: "", leadTimeDays: "1", active: "true", notes: "",
+    }));
+    const snapshot = mutations.generatePurchaseSuggestionSnapshot("Guardar referencia");
+
+    db.update(schema.purchaseSuggestionLines)
+      .set({ supplierId: unusedSupplier.data!.id })
+      .where(eq(schema.purchaseSuggestionLines.purchaseSuggestionId, snapshot.data!.id))
+      .run();
+
+    const result = mutations.removeSupplier(unusedSupplier.data!.id);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("snapshots");
+    expect(ingredient.id).toBeDefined();
+  });
+
   it("calculates break-even from current ledger data instead of fixed hardcoded values", async () => {
     const { directory, url } = createTempDatabaseUrl();
     tempDirectories.push(directory);
@@ -564,6 +720,35 @@ describe("data mutations", () => {
     expect(summary.fixedCosts).toBe(4000);
     expect(summary.breakEvenRevenue).toBeGreaterThan(0);
     expect(summary.breakEvenUnits).toBeGreaterThan(0);
+  });
+
+  it("does not let a newer blank ledger hide a populated ledger", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, catalog } = await loadModules(url);
+    const created = mutations.createMonthlyLedgerFromFormData(createFormData({ month: "12", year: "2030" }));
+    expect(created.ok).toBe(true);
+    const overview = catalog.getMonthlyLedgerOverview();
+    expect(overview.ledger.id).toBe("ledger-2026-05");
+    expect(overview.lines.some((line) => line.totalAmount > 0)).toBe(true);
+  });
+
+  it("includes monthly variable costs in break-even contribution", async () => {
+    const { directory, url } = createTempDatabaseUrl();
+    tempDirectories.push(directory);
+
+    const { mutations, catalog, db, schema } = await loadModules(url);
+    db.update(schema.recipes).set({ currentSalePrice: 1000 }).run();
+    db.update(schema.monthlyLedgerLines).set({ week1Amount: 0, week2Amount: 0, week3Amount: 0, week4Amount: 0, totalAmount: 0 }).where(eq(schema.monthlyLedgerLines.id, "ledger-variable-1")).run();
+    mutations.saveMonthlyLedgerLineFromFormData(createFormData({ id: "ledger-fixed-1", concept: "Fijos", type: "fixed", week1Amount: "1000", week2Amount: "1000", week3Amount: "1000", week4Amount: "1000" }));
+    mutations.saveMonthlyLedgerLineFromFormData(createFormData({ id: "ledger-income-1", concept: "Ventas", type: "income", week1Amount: "10000", week2Amount: "10000", week3Amount: "10000", week4Amount: "10000" }));
+    const withoutVariable = catalog.getBreakEvenSummary();
+    mutations.saveMonthlyLedgerLineFromFormData(createFormData({ id: "ledger-variable-1", concept: "Variables", type: "variable", week1Amount: "5000", week2Amount: "0", week3Amount: "0", week4Amount: "0" }));
+    const withVariable = catalog.getBreakEvenSummary();
+
+    expect(withVariable.avgContributionMargin).toBeLessThan(withoutVariable.avgContributionMargin);
+    expect(withVariable.breakEvenRevenue).toBeGreaterThan(withoutVariable.breakEvenRevenue);
   });
 
   it("marks a recipe as desactualizada when one of its ingredients changes after the last costing", async () => {

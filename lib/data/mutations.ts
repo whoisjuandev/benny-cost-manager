@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { calculatePurchaseSuggestion } from "../costing/engine";
-import { canConvertUnit } from "../costing/units";
+import { canConvertUnit, convertUnit } from "../costing/units";
 import type { Unit } from "../costing/types";
 import { db, schema } from "../db/client";
 import { ensureDatabaseReady } from "../db/init";
@@ -189,6 +189,42 @@ function createMonthlyLedgerId(month: number, year: number) {
   return `ledger-${year}-${String(month).padStart(2, "0")}`;
 }
 
+function wouldCreateSubRecipeCycle(parentId: string, nestedId: string, ignoredLineId?: string) {
+  if (parentId === nestedId) return true;
+
+  const lines = db.select({
+    id: schema.subRecipeLines.id,
+    subRecipeId: schema.subRecipeLines.subRecipeId,
+    nestedSubRecipeId: schema.subRecipeLines.nestedSubRecipeId,
+  }).from(schema.subRecipeLines).all();
+  const children = new Map<string, string[]>();
+
+  for (const line of lines) {
+    if (line.id === ignoredLineId || !line.nestedSubRecipeId) continue;
+    const current = children.get(line.subRecipeId) ?? [];
+    current.push(line.nestedSubRecipeId);
+    children.set(line.subRecipeId, current);
+  }
+
+  const visited = new Set<string>();
+  const visit = (currentId: string): boolean => {
+    if (currentId === parentId) return true;
+    if (visited.has(currentId)) return false;
+    visited.add(currentId);
+    return (children.get(currentId) ?? []).some(visit);
+  };
+
+  return visit(nestedId);
+}
+
+function incompatibleLineError(targetUnit: string, refName: string) {
+  return {
+    ok: false as const,
+    message: `La unidad de la línea no es compatible con la unidad de uso de ${refName} (${targetUnit}).`,
+    fieldErrors: { unit: `Usá una unidad compatible con ${targetUnit}.` },
+  };
+}
+
 export function saveBusinessSettingsFromFormData(formData: FormData): MutationResult<{ id: number }> {
   const parsed = businessSettingsFormSchema.safeParse({
     businessName: formData.get("businessName"),
@@ -366,6 +402,11 @@ export function removeIngredient(id: string): MutationResult<{ id: string }> {
     return { ok: false, message: "No podés borrar un insumo con historial de inventario." };
   }
 
+  const purchaseSnapshotUsage = db.select().from(schema.purchaseSuggestionLines).where(eq(schema.purchaseSuggestionLines.ingredientId, id)).all().length;
+  if (purchaseSnapshotUsage > 0) {
+    return { ok: false, message: "No podés borrar un insumo con snapshots de pedidos guardados." };
+  }
+
   db.delete(schema.ingredients)
     .where(eq(schema.ingredients.id, id))
     .run();
@@ -470,7 +511,7 @@ export function saveRecipeLineFromFormData(formData: FormData): MutationResult<{
   }
 
   if (parsed.data.refType === "ingredient") {
-    const ingredient = db.select({ id: schema.ingredients.id })
+    const ingredient = db.select({ id: schema.ingredients.id, name: schema.ingredients.name, usageUnit: schema.ingredients.usageUnit })
       .from(schema.ingredients)
       .where(eq(schema.ingredients.id, parsed.data.refId))
       .get();
@@ -478,14 +519,22 @@ export function saveRecipeLineFromFormData(formData: FormData): MutationResult<{
     if (!ingredient) {
       return { ok: false, message: "El insumo seleccionado no existe." };
     }
+
+    if (!canConvertUnit(parsed.data.unit as Unit, ingredient.usageUnit as Unit)) {
+      return incompatibleLineError(ingredient.usageUnit, ingredient.name);
+    }
   } else {
-    const subRecipe = db.select({ id: schema.subRecipes.id })
+    const subRecipe = db.select({ id: schema.subRecipes.id, name: schema.subRecipes.name, outputUnit: schema.subRecipes.outputUnit })
       .from(schema.subRecipes)
       .where(eq(schema.subRecipes.id, parsed.data.refId))
       .get();
 
     if (!subRecipe) {
       return { ok: false, message: "La sub-receta seleccionada no existe." };
+    }
+
+    if (!canConvertUnit(parsed.data.unit as Unit, subRecipe.outputUnit as Unit)) {
+      return incompatibleLineError(subRecipe.outputUnit, subRecipe.name);
     }
   }
 
@@ -664,7 +713,7 @@ export function saveSubRecipeLineFromFormData(formData: FormData): MutationResul
   }
 
   if (parsed.data.refType === "ingredient") {
-    const ingredient = db.select({ id: schema.ingredients.id })
+    const ingredient = db.select({ id: schema.ingredients.id, name: schema.ingredients.name, usageUnit: schema.ingredients.usageUnit })
       .from(schema.ingredients)
       .where(eq(schema.ingredients.id, parsed.data.refId))
       .get();
@@ -672,22 +721,30 @@ export function saveSubRecipeLineFromFormData(formData: FormData): MutationResul
     if (!ingredient) {
       return { ok: false, message: "El insumo seleccionado no existe." };
     }
+
+    if (!canConvertUnit(parsed.data.unit as Unit, ingredient.usageUnit as Unit)) {
+      return incompatibleLineError(ingredient.usageUnit, ingredient.name);
+    }
   } else {
-    if (parsed.data.refId === parsed.data.subRecipeId) {
+    if (wouldCreateSubRecipeCycle(parsed.data.subRecipeId, parsed.data.refId, parsed.data.lineId)) {
       return {
         ok: false,
-        message: "Una sub-receta no puede referenciarse a sí misma.",
-        fieldErrors: { refId: "No se permite autoreferencia." },
+        message: "La línea crea un ciclo de sub-recetas y no se puede guardar.",
+        fieldErrors: { refId: "No se permiten ciclos de dependencia." },
       };
     }
 
-    const nestedSubRecipe = db.select({ id: schema.subRecipes.id })
+    const nestedSubRecipe = db.select({ id: schema.subRecipes.id, name: schema.subRecipes.name, outputUnit: schema.subRecipes.outputUnit })
       .from(schema.subRecipes)
       .where(eq(schema.subRecipes.id, parsed.data.refId))
       .get();
 
     if (!nestedSubRecipe) {
       return { ok: false, message: "La sub-receta anidada no existe." };
+    }
+
+    if (!canConvertUnit(parsed.data.unit as Unit, nestedSubRecipe.outputUnit as Unit)) {
+      return incompatibleLineError(nestedSubRecipe.outputUnit, nestedSubRecipe.name);
     }
   }
 
@@ -821,6 +878,10 @@ export function saveInventoryCountFromFormData(formData: FormData): MutationResu
     return { ok: false, message: "El insumo no existe." };
   }
 
+  if (!canConvertUnit(parsed.data.unit as Unit, ingredient.usageUnit as Unit)) {
+    return incompatibleLineError(ingredient.usageUnit, ingredient.name);
+  }
+
   const timestamp = nowIso();
   const inventoryCountId = createLineId(parsed.data.ingredientId, "inventory-count");
 
@@ -843,10 +904,9 @@ export function saveInventoryCountFromFormData(formData: FormData): MutationResu
       location: parsed.data.location || null,
     }).run();
 
-    tx.update(schema.ingredients)
+      tx.update(schema.ingredients)
       .set({
-        currentStock: parsed.data.quantity,
-        usageUnit: parsed.data.unit,
+        currentStock: convertUnit(parsed.data.quantity, parsed.data.unit as Unit, ingredient.usageUnit as Unit),
         updatedAt: timestamp,
       })
       .where(eq(schema.ingredients.id, parsed.data.ingredientId))
@@ -1289,6 +1349,11 @@ export function removeSupplier(id: string): MutationResult<{ id: string }> {
     .all().length;
   if (linkedIngredients > 0) {
     return { ok: false, message: "No podés borrar un proveedor que todavía tiene insumos asociados." };
+  }
+
+  const purchaseSnapshotUsage = db.select().from(schema.purchaseSuggestionLines).where(eq(schema.purchaseSuggestionLines.supplierId, id)).all().length;
+  if (purchaseSnapshotUsage > 0) {
+    return { ok: false, message: "No podés borrar un proveedor con snapshots de pedidos guardados." };
   }
 
   db.delete(schema.suppliers)

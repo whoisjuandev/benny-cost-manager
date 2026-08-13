@@ -20,10 +20,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatDate, formatPercent } from "@/domain/format";
-import { getDashboardData } from "@/lib/data/catalog";
+import { getCurrencySymbol, getDashboardData } from "@/lib/data/catalog";
 
 export default function DashboardPage() {
   const { dashboardKpis, ingredients, recipes } = getDashboardData();
+  const currencySymbol = getCurrencySymbol();
   const outdated = recipes.filter((r) => r.status === "desactualizada");
   const lowStock = ingredients.filter((i) => i.status === "critico" || i.status === "bajo").slice(0, 5);
 
@@ -42,10 +43,10 @@ export default function DashboardPage() {
 
       <div className="flex flex-col gap-6 p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiCard label="Ingresos del mes" value={formatCurrency(dashboardKpis.monthRevenue)} delta={dashboardKpis.monthRevenueDelta} hint="vs mes anterior" icon={<DollarSign className="h-4 w-4" />} />
+          <KpiCard label="Ingresos del mes" value={formatCurrency(dashboardKpis.monthRevenue, currencySymbol)} delta={dashboardKpis.monthRevenueDelta} hint="vs mes anterior" icon={<DollarSign className="h-4 w-4" />} />
           <KpiCard label="Food cost promedio" value={formatPercent(dashboardKpis.avgFoodCost)} delta={dashboardKpis.avgFoodCostDelta} invertDelta hint="objetivo 30%" icon={<Percent className="h-4 w-4" />} />
           <KpiCard label="Margen bruto" value={formatPercent(dashboardKpis.grossMargin)} delta={dashboardKpis.grossMarginDelta} hint="vs mes anterior" icon={<TrendingUp className="h-4 w-4" />} />
-          <KpiCard label="Pedidos del mes" value={dashboardKpis.ordersThisMonth.toLocaleString("es-AR")} delta={dashboardKpis.ordersDelta} hint={`ticket promedio ${formatCurrency(dashboardKpis.avgTicket)}`} icon={<Receipt className="h-4 w-4" />} />
+          <KpiCard label="Pedidos del mes" value={dashboardKpis.ordersThisMonth.toLocaleString("es-AR")} delta={dashboardKpis.ordersDelta} hint={`ticket promedio ${formatCurrency(dashboardKpis.avgTicket, currencySymbol)}`} icon={<Receipt className="h-4 w-4" />} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -88,7 +89,7 @@ export default function DashboardPage() {
                 </TableHeader>
                 <TableBody>
                   {[...outdated, ...recipes.filter((r) => r.status === "borrador")].map((r) => {
-                    const fc = r.salePrice > 0 ? r.totalCost / r.salePrice : 0;
+                    const fc = r.salePrice > 0 ? r.costPerServing / r.salePrice : 0;
                     return (
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">
@@ -98,8 +99,8 @@ export default function DashboardPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{r.category}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(r.totalCost)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(r.salePrice)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(r.totalCost, currencySymbol)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(r.salePrice, currencySymbol)}</TableCell>
                         <TableCell className="text-right">
                           {r.salePrice > 0 ? <CostBadge foodCost={fc} target={r.targetFoodCost} /> : <span className="text-muted-foreground">—</span>}
                         </TableCell>

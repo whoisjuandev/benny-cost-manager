@@ -1,4 +1,4 @@
-import { count } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 
 import {
   ingredientCategoryMap,
@@ -7,6 +7,7 @@ import {
   recipeSeed,
   subRecipeSeed,
   supplierSeed,
+  ingredientSkus,
 } from "../costing/benny-seed";
 
 import { db, schema } from "./client";
@@ -18,6 +19,11 @@ function nowIso() {
 export function seedDatabase() {
   const existingSuppliers = db.select({ value: count() }).from(schema.suppliers).get();
   if ((existingSuppliers?.value ?? 0) > 0) {
+    for (const [ingredientId, sku] of Object.entries(ingredientSkus)) {
+      if (sku) {
+        db.update(schema.ingredients).set({ sku }).where(and(eq(schema.ingredients.id, ingredientId), isNull(schema.ingredients.sku))).run();
+      }
+    }
     return;
   }
 
@@ -46,7 +52,7 @@ export function seedDatabase() {
     Object.values(ingredientSeed).map((ingredient) => ({
       id: ingredient.id,
       name: ingredient.name,
-      sku: null,
+      sku: ingredientSkus[ingredient.id] ?? null,
       category: ingredientCategoryMap[ingredient.id] ?? "General",
       supplierId: ingredientSupplierMap[ingredient.id] ?? null,
       purchasePresentationLabel: `${ingredient.purchaseQuantity} ${ingredient.purchaseUnit}`,

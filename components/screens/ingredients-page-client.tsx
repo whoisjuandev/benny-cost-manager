@@ -87,9 +87,11 @@ function FieldError({ message }: { message?: string }) {
 export function IngredientsPageClient({
   ingredients,
   suppliers,
+  currencySymbol,
 }: {
   ingredients: Ingredient[];
   suppliers: Supplier[];
+  currencySymbol: string;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StockStatus | "all">("all");
@@ -243,7 +245,7 @@ export function IngredientsPageClient({
                       {supplierById[ingredient.supplierId] ?? "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatCurrency(ingredient.unitCost)}
+                      {formatCurrency(ingredient.unitCost, currencySymbol)}
                       <span className="ml-1 text-xs text-muted-foreground">/{ingredient.unit}</span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">

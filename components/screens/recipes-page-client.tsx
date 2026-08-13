@@ -78,6 +78,7 @@ type SubRecipeOption = {
     quantity: number;
     unit: string;
     unitCost: number;
+    subtotal: number;
   }>;
 };
 
@@ -112,10 +113,12 @@ export function RecipesPageClient({
   recipes,
   ingredients,
   subRecipes,
+  currencySymbol,
 }: {
   recipes: Recipe[];
   ingredients: Ingredient[];
   subRecipes: SubRecipeOption[];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const list = recipes.filter((recipe) => !recipe.isSubrecipe);
@@ -178,7 +181,7 @@ export function RecipesPageClient({
               </div>
             ) : (
               filtered.map((recipe) => {
-                const foodCost = recipe.salePrice > 0 ? recipe.totalCost / recipe.salePrice : 0;
+                const foodCost = recipe.salePrice > 0 ? recipe.costPerServing / recipe.salePrice : 0;
                 const isActive = recipe.id === selected?.id;
 
                 return (
@@ -199,7 +202,7 @@ export function RecipesPageClient({
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <span>{recipe.category}</span>
                         <span>·</span>
-                        <span className="tabular-nums">{formatCurrency(recipe.salePrice)}</span>
+                        <span className="tabular-nums">{formatCurrency(recipe.salePrice, currencySymbol)}</span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -216,7 +219,7 @@ export function RecipesPageClient({
         </Card>
 
         {selected ? (
-          <RecipeEditor recipe={selected} ingredients={ingredients} subRecipes={subRecipes} />
+           <RecipeEditor recipe={selected} ingredients={ingredients} subRecipes={subRecipes} currencySymbol={currencySymbol} />
         ) : (
           <EmptyEditor />
         )}
@@ -240,17 +243,19 @@ function RecipeEditor({
   recipe,
   ingredients,
   subRecipes,
+  currencySymbol,
 }: {
   recipe: Recipe;
   ingredients: Ingredient[];
   subRecipes: SubRecipeOption[];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
-  const foodCost = recipe.salePrice > 0 ? recipe.totalCost / recipe.salePrice : 0;
+  const foodCost = recipe.salePrice > 0 ? recipe.costPerServing / recipe.salePrice : 0;
   const margin = recipe.salePrice > 0 ? 1 - foodCost : 0;
   const priceWithIva = recipe.salePrice * (1 + recipe.ivaRate);
-  const suggestedPrice = recipe.targetFoodCost > 0 ? recipe.totalCost / recipe.targetFoodCost : 0;
+  const suggestedPrice = recipe.targetFoodCost > 0 ? recipe.costPerServing / recipe.targetFoodCost : 0;
   const [pricingState, pricingAction] = useActionState(saveRecipeAction, initialState);
 
   useEffect(() => {
@@ -288,10 +293,10 @@ function RecipeEditor({
       <Separator />
 
       <div className="grid grid-cols-2 gap-px overflow-hidden border-b bg-border md:grid-cols-4">
-        <KpiCell label="Costo total" value={formatCurrency(recipe.totalCost)} />
-        <KpiCell label="Precio venta" value={formatCurrency(recipe.salePrice)} hint={`c/ IVA ${formatCurrency(priceWithIva)}`} />
+        <KpiCell label="Costo total" value={formatCurrency(recipe.totalCost, currencySymbol)} />
+        <KpiCell label="Precio venta" value={formatCurrency(recipe.salePrice, currencySymbol)} hint={`c/ IVA ${formatCurrency(priceWithIva, currencySymbol)}`} />
         <KpiCell label="Food cost" value={<CostBadge foodCost={foodCost} target={recipe.targetFoodCost} />} hint={`objetivo ${formatPercent(recipe.targetFoodCost)}`} />
-        <KpiCell label="Margen bruto" value={<MarginBadge margin={margin} />} hint={`sugerido ${formatCurrency(suggestedPrice)}`} />
+        <KpiCell label="Margen bruto" value={<MarginBadge margin={margin} />} hint={`sugerido ${formatCurrency(suggestedPrice, currencySymbol)}`} />
       </div>
 
       <CardContent className="p-0">
@@ -323,7 +328,7 @@ function RecipeEditor({
                   </TableRow>
                 ) : (
                   recipe.lines.map((line) => (
-                    <RecipeLineRow key={line.id} recipeId={recipe.id} line={line} />
+                    <RecipeLineRow key={line.id} recipeId={recipe.id} line={line} currencySymbol={currencySymbol} />
                   ))
                 )}
               </TableBody>
@@ -333,7 +338,7 @@ function RecipeEditor({
               <AddRecipeLineDialog recipeId={recipe.id} ingredients={ingredients} subRecipes={subRecipes} />
               <div className="flex items-center gap-6 text-sm">
                 <span className="text-muted-foreground">Total receta</span>
-                <span className="text-base font-semibold tabular-nums">{formatCurrency(recipe.totalCost)}</span>
+                <span className="text-base font-semibold tabular-nums">{formatCurrency(recipe.totalCost, currencySymbol)}</span>
               </div>
             </div>
           </TabsContent>
@@ -365,7 +370,7 @@ function RecipeEditor({
                 <div className="flex flex-col gap-2">
                   <Label>Precio sugerido</Label>
                   <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm tabular-nums">
-                    {formatCurrency(suggestedPrice)}
+                    {formatCurrency(suggestedPrice, currencySymbol)}
                   </div>
                 </div>
               </div>
@@ -395,9 +400,11 @@ function RecipeEditor({
 function RecipeLineRow({
   recipeId,
   line,
+  currencySymbol,
 }: {
   recipeId: string;
   line: Recipe["lines"][number];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(saveRecipeLineAction, initialState);
@@ -446,10 +453,10 @@ function RecipeLineRow({
         <FieldError message={state.fieldErrors.quantity || state.fieldErrors.unit} />
       </TableCell>
       <TableCell className="text-right tabular-nums text-muted-foreground">
-        {formatCurrency(line.unitCost)}/{line.unit}
+        {formatCurrency(line.unitCost, currencySymbol)}/{line.unit}
       </TableCell>
       <TableCell className="text-right tabular-nums font-medium">
-        {formatCurrency(line.unitCost * line.quantity)}
+        {formatCurrency(line.subtotal, currencySymbol)}
       </TableCell>
       <TableCell>
         <div className="flex justify-end">

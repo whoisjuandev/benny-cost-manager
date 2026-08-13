@@ -3,11 +3,12 @@ import { PageHeader } from "@/components/domain/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/domain/format";
-import { getRecipes } from "@/lib/data/catalog";
+import { getCurrencySymbol, getRecipes } from "@/lib/data/catalog";
 import { calculateFoodCostPct, calculateGrossMarginPct, calculateSuggestedPrice } from "@/lib/costing/engine";
 
 export default function PricingAnalysisPage() {
   const recipes = getRecipes().filter((recipe) => !recipe.isSubrecipe);
+  const currencySymbol = getCurrencySymbol();
 
   return (
     <div className="flex flex-col">
@@ -31,15 +32,15 @@ export default function PricingAnalysisPage() {
               </TableHeader>
               <TableBody>
                 {recipes.map((recipe) => {
-                  const suggested = calculateSuggestedPrice(recipe.totalCost, 1 - recipe.targetFoodCost, recipe.ivaRate);
-                  const foodCost = recipe.salePrice > 0 ? calculateFoodCostPct(recipe.totalCost, recipe.salePrice) : 0;
-                  const margin = recipe.salePrice > 0 ? calculateGrossMarginPct(recipe.totalCost, recipe.salePrice) : 0;
+                  const suggested = calculateSuggestedPrice(recipe.costPerServing, 1 - recipe.targetFoodCost, recipe.ivaRate);
+                  const foodCost = recipe.salePrice > 0 ? calculateFoodCostPct(recipe.costPerServing, recipe.salePrice) : 0;
+                  const margin = recipe.salePrice > 0 ? calculateGrossMarginPct(recipe.costPerServing, recipe.salePrice) : 0;
                   return (
                     <TableRow key={recipe.id}>
                       <TableCell className="font-medium">{recipe.name}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(recipe.totalCost)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(recipe.salePrice)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(suggested.priceWithoutTax)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(recipe.totalCost, currencySymbol)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(recipe.salePrice, currencySymbol)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(suggested.priceWithoutTax, currencySymbol)}</TableCell>
                       <TableCell className="text-right">
                         {recipe.salePrice > 0 ? <CostBadge foodCost={foodCost} target={recipe.targetFoodCost} /> : <span className="text-muted-foreground">—</span>}
                       </TableCell>

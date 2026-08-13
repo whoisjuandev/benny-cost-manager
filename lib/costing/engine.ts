@@ -62,34 +62,45 @@ function calculateIngredientLineCost(line: Extract<RecipeLine, { type: "ingredie
 export function calculateSubRecipeCost(
   subRecipe: SubRecipeDefinition,
   context: CostingContext,
+  visiting = new Set<string>(),
 ): CalculatedSubRecipeCost {
   if (subRecipe.outputQuantity <= 0) {
     throw new Error("subRecipe.outputQuantity must be greater than 0");
   }
 
-  const totalLineCost = subRecipe.lines.reduce((total, line) => {
-    if (line.type === "ingredient") {
-      return total + calculateIngredientLineCost(line, context);
-    }
+  if (visiting.has(subRecipe.id)) {
+    throw new Error(`Circular sub-recipe dependency detected at ${subRecipe.id}`);
+  }
 
-    const nested = context.subRecipes?.[line.subRecipeId];
-    if (!nested) {
-      throw new Error(`Sub-recipe not found: ${line.subRecipeId}`);
-    }
+  visiting.add(subRecipe.id);
 
-    const nestedCost = calculateSubRecipeCost(nested, context);
-    const quantityInOutputUnit = convertUnit(line.quantity, line.unit, nestedCost.outputUnit);
-    return total + quantityInOutputUnit * nestedCost.costPerOutputUnit;
-  }, 0);
+  try {
+    const totalLineCost = subRecipe.lines.reduce((total, line) => {
+      if (line.type === "ingredient") {
+        return total + calculateIngredientLineCost(line, context);
+      }
 
-  const adjustedTotalCost = totalLineCost * getEffectiveMultiplier(subRecipe.wastePct, subRecipe.correctionFactor);
+      const nested = context.subRecipes?.[line.subRecipeId];
+      if (!nested) {
+        throw new Error(`Sub-recipe not found: ${line.subRecipeId}`);
+      }
 
-  return {
-    totalCost: adjustedTotalCost,
-    outputQuantity: subRecipe.outputQuantity,
-    outputUnit: subRecipe.outputUnit,
-    costPerOutputUnit: adjustedTotalCost / subRecipe.outputQuantity,
-  };
+      const nestedCost = calculateSubRecipeCost(nested, context, visiting);
+      const quantityInOutputUnit = convertUnit(line.quantity, line.unit, nestedCost.outputUnit);
+      return total + quantityInOutputUnit * nestedCost.costPerOutputUnit;
+    }, 0);
+
+    const adjustedTotalCost = totalLineCost * getEffectiveMultiplier(subRecipe.wastePct, subRecipe.correctionFactor);
+
+    return {
+      totalCost: adjustedTotalCost,
+      outputQuantity: subRecipe.outputQuantity,
+      outputUnit: subRecipe.outputUnit,
+      costPerOutputUnit: adjustedTotalCost / subRecipe.outputQuantity,
+    };
+  } finally {
+    visiting.delete(subRecipe.id);
+  }
 }
 
 export function calculateRecipeLineCost(line: RecipeLine, context: CostingContext): number {

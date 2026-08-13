@@ -75,10 +75,12 @@ export function FinancePageClient({
   ledger,
   lines,
   ledgers,
+  currencySymbol,
 }: {
   ledger: MonthlyLedger;
   lines: MonthlyLedgerLine[];
   ledgers: MonthlyLedger[];
+  currencySymbol: string;
 }) {
   const totals = lines.reduce(
     (acc, line) => {
@@ -126,14 +128,14 @@ export function FinancePageClient({
         </Card>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <SummaryCard label="Ingresos" value={formatCurrency(totals.income ?? 0)} />
-          <SummaryCard label="Costos fijos" value={formatCurrency(totals.fixed ?? 0)} />
-          <SummaryCard label="Costos variables" value={formatCurrency(totals.variable ?? 0)} />
+          <SummaryCard label="Ingresos" value={formatCurrency(totals.income ?? 0, currencySymbol)} />
+          <SummaryCard label="Costos fijos" value={formatCurrency(totals.fixed ?? 0, currencySymbol)} />
+          <SummaryCard label="Costos variables" value={formatCurrency(totals.variable ?? 0, currencySymbol)} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {lines.map((line) => (
-            <FinanceLineCard key={line.id} line={line} />
+           <FinanceLineCard key={line.id} line={line} currencySymbol={currencySymbol} />
           ))}
         </div>
       </div>
@@ -296,7 +298,7 @@ function AddLedgerLineDialog({ ledgerId }: { ledgerId: string }) {
   );
 }
 
-function FinanceLineCard({ line }: { line: MonthlyLedgerLine }) {
+function FinanceLineCard({ line, currencySymbol }: { line: MonthlyLedgerLine; currencySymbol: string }) {
   const router = useRouter();
   const [state, formAction] = useActionState(saveMonthlyLedgerLineAction, initialState);
   const [isDeleting, startDelete] = useTransition();
@@ -356,9 +358,9 @@ function FinanceLineCard({ line }: { line: MonthlyLedgerLine }) {
 
           <div className="rounded-md border bg-muted/30 p-3 text-sm">
             <span className="text-muted-foreground">Total actual: </span>
-            <span className="font-medium tabular-nums">{formatCurrency(line.totalAmount)}</span>
+            <span className="font-medium tabular-nums">{formatCurrency(line.totalAmount, currencySymbol)}</span>
             <span className="text-muted-foreground"> · total editable base: </span>
-            <span className="font-medium tabular-nums">{formatCurrency(projectedTotal)}</span>
+            <span className="font-medium tabular-nums">{formatCurrency(projectedTotal, currencySymbol)}</span>
           </div>
 
           {deleteError ? (

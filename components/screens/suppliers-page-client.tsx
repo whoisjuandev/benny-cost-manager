@@ -98,7 +98,7 @@ export function SuppliersPageClient({ suppliers }: { suppliers: Supplier[] }) {
         </Card>
       </div>
 
-      <SupplierDialog
+          <SupplierDialog
         open={open}
         onOpenChange={setOpen}
         supplier={editing}
@@ -171,7 +171,7 @@ function SupplierDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="supplier-notes">Notas</Label>
-            <Input id="supplier-notes" name="notes" defaultValue="" />
+            <Input id="supplier-notes" name="notes" defaultValue={supplier?.notes ?? ""} />
           </div>
 
           {state.error ? (

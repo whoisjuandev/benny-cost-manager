@@ -7,6 +7,7 @@ import {
   calculateIngredientUnitCost,
   calculateInventoryReorderPoint,
   calculatePurchaseSuggestion,
+  calculateRecipeLineCost,
   calculateRecipeCost,
   calculateSubRecipeCost,
 } from "../costing/engine";
@@ -41,14 +42,15 @@ function ensureLatestMonthlyLedger() {
       return b.month - a.month;
     });
 
-    const latest = sorted[0]!;
-    const lines = db.select()
-      .from(schema.monthlyLedgerLines)
-      .where(eq(schema.monthlyLedgerLines.monthlyLedgerId, latest.id))
-      .all();
+    for (const ledger of sorted) {
+      const lines = db.select()
+        .from(schema.monthlyLedgerLines)
+        .where(eq(schema.monthlyLedgerLines.monthlyLedgerId, ledger.id))
+        .all();
 
-    if (lines.length > 0) {
-      return { ledger: latest, lines };
+      if (lines.some((line) => line.totalAmount !== 0)) {
+        return { ledger, lines };
+      }
     }
   }
 
@@ -266,6 +268,7 @@ export function getSuppliers(): Supplier[] {
     phone: row.phone ?? undefined,
     leadTimeDays: row.leadTimeDays,
     active: row.active,
+    notes: row.notes ?? undefined,
   }));
 }
 
@@ -380,6 +383,7 @@ export function getRecipes(): Recipe[] {
       lines: definition.lines.map((line) => {
         if (line.type === "ingredient") {
           const ingredient = context.ingredients[line.ingredientId];
+          const subtotal = calculateRecipeLineCost(line, context);
           return {
             id: line.id,
             refType: "ingredient" as const,
@@ -387,12 +391,13 @@ export function getRecipes(): Recipe[] {
             refName: ingredient.name,
             quantity: line.quantity,
             unit: line.unit as Recipe["lines"][number]["unit"],
-            unitCost: Number(calculateIngredientUnitCost(ingredient).toFixed(4)),
+            unitCost: Number((subtotal / line.quantity).toFixed(4)),
+            subtotal,
           };
         }
 
         const subRecipe = context.subRecipes?.[line.subRecipeId];
-        const subRecipeCost = calculateSubRecipeCost(subRecipe!, context);
+        const subtotal = calculateRecipeLineCost(line, context);
         return {
           id: line.id,
           refType: "subrecipe" as const,
@@ -400,10 +405,12 @@ export function getRecipes(): Recipe[] {
           refName: subRecipe!.name,
           quantity: line.quantity,
           unit: line.unit as Recipe["lines"][number]["unit"],
-          unitCost: Number(subRecipeCost.costPerOutputUnit.toFixed(4)),
+          unitCost: Number((subtotal / line.quantity).toFixed(4)),
+          subtotal,
         };
       }),
       totalCost: Number(result.totalCost.toFixed(2)),
+      costPerServing: Number(result.costPerServing.toFixed(2)),
       salePrice,
       ivaRate: definition.taxPct ?? 0.21,
       targetFoodCost: Number((1 - definition.targetMarginPct).toFixed(2)),
@@ -436,10 +443,10 @@ export function getDashboardData() {
   const income = monthly.filter((line) => line.type === "income").reduce((total, line) => total + line.totalAmount, 0);
   const previousIncome = previousLines.filter((line) => line.type === "income").reduce((total, line) => total + line.totalAmount, 0);
   const avgFoodCost = pricedRecipes.length > 0
-    ? pricedRecipes.reduce((total, recipe) => total + calculateFoodCostPct(recipe.totalCost, recipe.salePrice), 0) / pricedRecipes.length
+      ? pricedRecipes.reduce((total, recipe) => total + calculateFoodCostPct(recipe.costPerServing, recipe.salePrice), 0) / pricedRecipes.length
     : 0;
   const grossMargin = pricedRecipes.length > 0
-    ? pricedRecipes.reduce((total, recipe) => total + calculateGrossMarginPct(recipe.totalCost, recipe.salePrice), 0) / pricedRecipes.length
+      ? pricedRecipes.reduce((total, recipe) => total + calculateGrossMarginPct(recipe.costPerServing, recipe.salePrice), 0) / pricedRecipes.length
     : 0;
   const avgTicket = pricedRecipes.length > 0
     ? pricedRecipes.reduce((total, recipe) => total + recipe.salePrice, 0) / pricedRecipes.length
@@ -567,12 +574,15 @@ export function getBreakEvenSummary(): BreakEven {
     ? recipes.reduce((total, recipe) => total + recipe.salePrice, 0) / recipes.length
     : 0;
   const avgFoodCostPct = recipes.length > 0
-    ? recipes.reduce((total, recipe) => total + (recipe.totalCost / recipe.salePrice), 0) / recipes.length
+    ? recipes.reduce((total, recipe) => total + (recipe.costPerServing / recipe.salePrice), 0) / recipes.length
     : 0.3;
   const safeMonthlyRevenue = monthlyRevenue > 0 ? monthlyRevenue : 1;
   const safeAvgTicket = avgTicket > 0 ? avgTicket : 1;
   const monthlySalesCount = Math.max(Math.round(safeMonthlyRevenue / safeAvgTicket), 1);
-  const variableCostPerSale = 0;
+  const monthlyVariableCosts = lines
+    .filter((line) => line.type === "variable")
+    .reduce((total, line) => total + line.totalAmount, 0);
+  const variableCostPerSale = monthlyVariableCosts / monthlySalesCount;
 
   let result;
   try {
@@ -586,13 +596,16 @@ export function getBreakEvenSummary(): BreakEven {
     });
   } catch {
     const fallbackContributionPct = Math.max(1 - avgFoodCostPct, 0.01);
-    const fallbackContributionAmount = safeAvgTicket * fallbackContributionPct;
+    const fallbackContributionAmount = Math.max(
+      safeAvgTicket * fallbackContributionPct - variableCostPerSale,
+      0.01,
+    );
     const breakEvenUnitsMonth = Math.max(Math.ceil((fixedCosts || 1) / fallbackContributionAmount), 1);
 
     result = {
       avgTicket: safeAvgTicket,
       contributionMarginAmount: fallbackContributionAmount,
-      contributionMarginPct: fallbackContributionPct,
+      contributionMarginPct: fallbackContributionAmount / safeAvgTicket,
       breakEvenUnitsMonth,
       breakEvenRevenueMonth: breakEvenUnitsMonth * safeAvgTicket,
       breakEvenUnitsDay: Math.max(Math.ceil(breakEvenUnitsMonth / 30), 1),
@@ -658,6 +671,10 @@ export function getBusinessSettings() {
   return row;
 }
 
+export function getCurrencySymbol() {
+  return getBusinessSettings()?.currencySymbol ?? "$";
+}
+
 export function getSubRecipesView() {
   const context = createCostingContext();
   return Object.values(context.subRecipes ?? {}).map((subRecipe) => {
@@ -695,6 +712,7 @@ export function getSubRecipesDetailed() {
       lines: subRecipe!.lines.map((line) => {
         if (line.type === "ingredient") {
           const ingredient = context.ingredients[line.ingredientId];
+          const subtotal = calculateRecipeLineCost(line, context);
 
           return {
             id: line.id,
@@ -703,12 +721,13 @@ export function getSubRecipesDetailed() {
             refName: ingredient.name,
             quantity: line.quantity,
             unit: line.unit,
-            unitCost: Number(calculateIngredientUnitCost(ingredient).toFixed(4)),
+            unitCost: Number((subtotal / line.quantity).toFixed(4)),
+            subtotal,
           };
         }
 
         const nestedSubRecipe = context.subRecipes?.[line.subRecipeId];
-        const nestedCost = calculateSubRecipeCost(nestedSubRecipe!, context);
+        const subtotal = calculateRecipeLineCost(line, context);
 
         return {
           id: line.id,
@@ -717,7 +736,8 @@ export function getSubRecipesDetailed() {
           refName: nestedSubRecipe!.name,
           quantity: line.quantity,
           unit: line.unit,
-          unitCost: Number(nestedCost.costPerOutputUnit.toFixed(4)),
+          unitCost: Number((subtotal / line.quantity).toFixed(4)),
+          subtotal,
         };
       }),
     };

@@ -1,7 +1,5 @@
 // Pure formatters — no React, no business logic beyond presentation.
-export const ARS = new Intl.NumberFormat("es-AR", {
-  style: "currency",
-  currency: "ARS",
+const CURRENCY_NUMBER = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 
@@ -14,7 +12,7 @@ export const NUM = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 2,
 });
 
-export const formatCurrency = (n: number) => ARS.format(n);
+export const formatCurrency = (n: number, currencySymbol = "$") => `${currencySymbol} ${CURRENCY_NUMBER.format(n)}`;
 export const formatPercent = (n: number) => PCT.format(n);
 export const formatNumber = (n: number) => NUM.format(n);
 

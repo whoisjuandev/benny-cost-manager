@@ -128,6 +128,32 @@ describe("calculateRecipeCost", () => {
     expect(result.totalCost).toBeCloseTo(477.35, 2);
     expect(result.costPerServing).toBeCloseTo(477.35, 2);
   });
+
+  it("exposes total batch cost and cost per serving separately", () => {
+    const recipe: RecipeDefinition = {
+      id: "batch",
+      name: "Batch",
+      servings: 4,
+      targetMarginPct: 0.6,
+      lines: [{ id: "r1", type: "ingredient", ingredientId: "flour", quantity: 1000, unit: "g" }],
+    };
+
+    const result = calculateRecipeCost(recipe, context);
+    expect(result.totalCost).toBeCloseTo(112, 2);
+    expect(result.costPerServing).toBeCloseTo(28, 2);
+  });
+
+  it("protects the engine from indirect sub-recipe cycles", () => {
+    const cyclicContext: CostingContext = {
+      ingredients,
+      subRecipes: {
+        a: { id: "a", name: "A", outputQuantity: 1, outputUnit: "u", lines: [{ id: "ab", type: "subRecipe", subRecipeId: "b", quantity: 1, unit: "u" }] },
+        b: { id: "b", name: "B", outputQuantity: 1, outputUnit: "u", lines: [{ id: "ba", type: "subRecipe", subRecipeId: "a", quantity: 1, unit: "u" }] },
+      },
+    };
+
+    expect(() => calculateSubRecipeCost(cyclicContext.subRecipes!.a!, cyclicContext)).toThrow("Circular sub-recipe dependency");
+  });
 });
 
 describe("pricing helpers", () => {

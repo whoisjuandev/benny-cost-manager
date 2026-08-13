@@ -50,9 +50,11 @@ type Snapshot = {
 export function PurchaseSuggestionsPageClient({
   suggestions,
   latestSnapshot,
+  currencySymbol,
 }: {
   suggestions: PurchaseSuggestion[];
   latestSnapshot: Snapshot;
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(generatePurchaseSuggestionAction, initialState);
@@ -93,7 +95,7 @@ export function PurchaseSuggestionsPageClient({
       <div className="flex flex-col gap-4 p-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <MetricCard label="Insumos a reponer" value={String(displayLines.length)} />
-          <MetricCard label="Costo estimado" value={formatCurrency(totalEstimatedCost)} />
+          <MetricCard label="Costo estimado" value={formatCurrency(totalEstimatedCost, currencySymbol)} />
           <MetricCard label="Último snapshot" value={latestSnapshot ? formatDate(latestSnapshot.generatedAt) : "No generado"} />
           <MetricCard label="Alertas proveedor" value={String(unresolvedSuppliers)} />
         </div>
@@ -220,7 +222,7 @@ export function PurchaseSuggestionsPageClient({
                     <TableCell className="text-right tabular-nums">
                       {item.suggestedPackages ?? "—"}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{formatCurrency(item.estimatedCost)}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">{formatCurrency(item.estimatedCost, currencySymbol)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{item.reason ?? "—"}</TableCell>
                   </TableRow>
                 ))}

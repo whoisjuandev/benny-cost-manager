@@ -75,6 +75,7 @@ type SubRecipeDetail = {
     quantity: number;
     unit: string;
     unitCost: number;
+    subtotal: number;
   }>;
 };
 
@@ -108,9 +109,11 @@ function MutationAlert({ state }: { state: SubRecipeMutationState }) {
 export function SubRecipesPageClient({
   subRecipes,
   ingredients,
+  currencySymbol,
 }: {
   subRecipes: SubRecipeDetail[];
   ingredients: Ingredient[];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -175,7 +178,7 @@ export function SubRecipesPageClient({
                   <span className="truncate text-sm font-medium">{subRecipe.name}</span>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {formatCurrency(subRecipe.costPerOutputUnit)}/{subRecipe.outputUnit}
+                  {formatCurrency(subRecipe.costPerOutputUnit, currencySymbol)}/{subRecipe.outputUnit}
                 </div>
               </button>
             ))}
@@ -183,7 +186,7 @@ export function SubRecipesPageClient({
         </Card>
 
         {selected ? (
-          <SubRecipeEditor subRecipe={selected} ingredients={ingredients} subRecipes={subRecipes} />
+          <SubRecipeEditor subRecipe={selected} ingredients={ingredients} subRecipes={subRecipes} currencySymbol={currencySymbol} />
         ) : (
           <Card className="flex items-center justify-center p-12 text-center">
             <div className="text-sm text-muted-foreground">No hay sub-recetas cargadas.</div>
@@ -198,10 +201,12 @@ function SubRecipeEditor({
   subRecipe,
   ingredients,
   subRecipes,
+  currencySymbol,
 }: {
   subRecipe: SubRecipeDetail;
   ingredients: Ingredient[];
   subRecipes: SubRecipeDetail[];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -232,8 +237,8 @@ function SubRecipeEditor({
       <Separator />
 
       <div className="grid grid-cols-2 gap-px overflow-hidden border-b bg-border md:grid-cols-4">
-        <KpiCell label="Costo total" value={formatCurrency(subRecipe.totalCost)} />
-        <KpiCell label="Costo por unidad" value={`${formatCurrency(subRecipe.costPerOutputUnit)}/${subRecipe.outputUnit}`} />
+         <KpiCell label="Costo total" value={formatCurrency(subRecipe.totalCost, currencySymbol)} />
+         <KpiCell label="Costo por unidad" value={`${formatCurrency(subRecipe.costPerOutputUnit, currencySymbol)}/${subRecipe.outputUnit}`} />
         <KpiCell label="Merma" value={formatPercent(subRecipe.wastePct)} />
         <KpiCell label="Factor corrección" value={formatNumber(subRecipe.correctionFactor)} />
       </div>
@@ -259,7 +264,7 @@ function SubRecipeEditor({
               </TableRow>
             ) : (
               subRecipe.lines.map((line) => (
-                <SubRecipeLineRow key={line.id} subRecipeId={subRecipe.id} line={line} />
+                <SubRecipeLineRow key={line.id} subRecipeId={subRecipe.id} line={line} currencySymbol={currencySymbol} />
               ))
             )}
           </TableBody>
@@ -269,7 +274,7 @@ function SubRecipeEditor({
           <AddSubRecipeLineDialog subRecipeId={subRecipe.id} ingredients={ingredients} subRecipes={subRecipes.filter((item) => item.id !== subRecipe.id)} />
           <div className="flex items-center gap-6 text-sm">
             <span className="text-muted-foreground">Total sub-receta</span>
-            <span className="text-base font-semibold tabular-nums">{formatCurrency(subRecipe.totalCost)}</span>
+            <span className="text-base font-semibold tabular-nums">{formatCurrency(subRecipe.totalCost, currencySymbol)}</span>
           </div>
         </div>
       </CardContent>
@@ -415,9 +420,11 @@ function SubRecipeFormDialog({
 function SubRecipeLineRow({
   subRecipeId,
   line,
+  currencySymbol,
 }: {
   subRecipeId: string;
   line: SubRecipeDetail["lines"][number];
+  currencySymbol: string;
 }) {
   const router = useRouter();
   const [state, formAction] = useActionState(saveSubRecipeLineAction, initialState);
@@ -457,10 +464,10 @@ function SubRecipeLineRow({
         <FieldError message={state.fieldErrors.quantity || state.fieldErrors.unit} />
       </TableCell>
       <TableCell className="text-right tabular-nums text-muted-foreground">
-        {formatCurrency(line.unitCost)}/{line.unit}
+        {formatCurrency(line.unitCost, currencySymbol)}/{line.unit}
       </TableCell>
       <TableCell className="text-right tabular-nums font-medium">
-        {formatCurrency(line.unitCost * line.quantity)}
+        {formatCurrency(line.subtotal, currencySymbol)}
       </TableCell>
       <TableCell>
         <div className="flex justify-end">

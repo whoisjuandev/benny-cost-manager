@@ -19,6 +19,7 @@ export interface Supplier {
   phone?: string;
   leadTimeDays: number;
   active: boolean;
+  notes?: string;
 }
 
 export interface Ingredient {
@@ -55,6 +56,8 @@ export interface RecipeLine {
   unit: UnitOfMeasure;
   /** costo unitario congelado al momento del costeo */
   unitCost: number;
+  /** subtotal convertido a la unidad cargada en la línea */
+  subtotal: number;
 }
 
 export interface Recipe {
@@ -67,6 +70,8 @@ export interface Recipe {
   lines: RecipeLine[];
   /** costo total (sumatoria con merma/corrección) */
   totalCost: number;
+  /** costo de una porción, usado cuando el precio es por porción */
+  costPerServing: number;
   /** precio de venta sin IVA */
   salePrice: number;
   ivaRate: number; // 0.21

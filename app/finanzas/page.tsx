@@ -1,5 +1,5 @@
 import { FinancePageClient } from "@/components/screens/finance-page-client";
-import { getMonthlyLedgerOverviewById } from "@/lib/data/catalog";
+import { getCurrencySymbol, getMonthlyLedgerOverviewById } from "@/lib/data/catalog";
 
 type FinancePageProps = {
   searchParams: Promise<{
@@ -19,6 +19,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         type: line.type as "income" | "fixed" | "variable",
       }))}
       ledgers={overview.ledgers}
+      currencySymbol={getCurrencySymbol()}
     />
   );
 }
